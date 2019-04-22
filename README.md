@@ -19,7 +19,7 @@ Once Meteor is available on your system, which you can verify by entering
 
 at the console, you’ll need to create a bare-bones Meteor app.  Change to an appropriate directory and enter:
 
-``meteor create QRLapp --minimal``
+``meteor create QRLapp``
 
 Meteor will bootstrap a minimal new app with bare-bones packages.  Once it’s done, enter the newly created QRLapp’s directory:
 
@@ -34,10 +34,6 @@ Meteor’s minimal app is missing a crucial component in developing with the QRL
 You should see ``+ qrllib@1.0.4`` in the console to indicate the package has been added to the project.
 
 ### 3. Running the development server
-
-We need another basic meteor package installed:
-
-``meteor add meteor-base``
 
 You’re now ready to get started with writing code.  Meteor has an inbuilt development platform which you can start by entering the QRLapp directory, then entering:
 
@@ -63,22 +59,22 @@ Open the _client/main.html_ file and replace the whole file with:
 </head>
 
 <body>
+  {{>hello}}
+</body>
 
+<template name="hello">
   <h1>QRL Meteor Tutorial app</h1>
   <p>
     Click the button to generate a QRL address
   </p>
-
-  <button id='generateButton'>Generate</button>
-
+  <button id='generateButton' {{qrllib}}>Generate</button>
   <p id='output'></p>
-  
-</body>
+</template>
 ```
 
 Go back to your browser and reload.  You should now see some (ugly!) UI elements… but note that they don’t do anything yet!
 
-### 5. Using QRLLIB within the client
+### 5. Initialising QRLLIB
 
 To access the QRL API, we’ll need to access the QRLLIB module installed earlier.  Replace the whole of the _client/main.js_ file with the line:
 
@@ -89,23 +85,36 @@ import { QRLLIBload } from 'qrllib/build/offline-libjsqrl';
 This loader will fetch the QRLLIB webassembly file and instantiate a QRLLIB object which can then be used in the client.  It’s important to include some logic to ensure this object is loaded correctly before using other functions.  To demonstrate, we’ll disable the _Generate_ button in the UI while we’re waiting for the QRLLIB webassembly to become available.  Add the following to the _client/main.js_ file:
 
 ```
-document.getElementById('generateButton').style.display = 'none';
+import { Template } from 'meteor/templating';
+import { Session } from 'meteor/session';
+import { QRLLIBload } from 'qrllib/build/offline-libjsqrl';
 
-const waitForQRLLIB = (callBack) => {
-  setTimeout(() => {
-    // Test the QRLLIB object has the str2bin function.
-    // This is sufficient to tell us QRLLIB has loaded.
-    if (typeof QRLLIB.str2bin === 'function') {
-      callBack();
-    } else {
-      return waitForQRLLIB(callBack);
-    }
-    return false;
-  }, 50);
-};
+import './main.html';
 
-waitForQRLLIB(() => {
-  document.getElementById('generateButton').style.display = 'block';
-  console.log('QRLLIB loaded!')
+function checkQRLLIB() {
+  // Test the QRLLIB object has the str2bin function.
+  // This is sufficient to tell us QRLLIB has loaded.
+  if (typeof QRLLIB.str2bin === 'function') {
+    Session.set('qrllib', true);
+    Meteor.clearTimeout(Session.get('checkingTimeout'));
+  }
+  return false;
+}
+
+Template.hello.onCreated(function helloOnCreated() {
+  Session.set('qrllib', false);
+  const checking = Meteor.setTimeout(checkQRLLIB, 1000);
+  Session.set('checkingTimout', checking);
+});
+
+Template.hello.helpers({
+  qrllib() {
+    if (!Session.get('qrllib')) { return 'disabled'; }
+    return '';
+  },
 });
 ```
+
+When the _hello_ <template>...</template> is created, a session variable _qrllib_ is set to false.  We start a ticker to check every 1 second to see if QRLLIB is loaded by calling the `checkQRLLIB()` function, storing the id of this ticker in another session variable _checkingTimeout_ so we can stop this function running once _qrllib_ is true.
+
+The helper object `qrllib()` is used to indicate whether or not there is a _disabled_ property added to the <button> HTML element in the UI.
